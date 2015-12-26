@@ -1,11 +1,31 @@
-/* \file sqlogger.cpp
+/***************************************************************************
+ *   (C) Carlos Nihelton (carlosnsoliveira@gmail.com) 2015                 *
+ *                                                                         *
+ *   This file is part of SQLogger C++11 data logger facility.             *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU Library General Public License (LGPL)   *
+ *   as published by the Free Software Foundation; either version 2 of     *
+ *   the License, or (at your option) any later version.                   *
+ *   for detail see the LICENCE text file.                                 *
+ *                                                                         *
+ *   SQLogger is distributed in the hope that it will be useful,           *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this code; if not, write to the Free Software      *
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+ *   USA                                                                   *
+ *                                                                         *
+ *   Carlos Nihelton 2015                                                  *
+ ***************************************************************************/
+/**
+ * \file sqlogger.cpp
  * \author Carlos Nihelton <carlosnsoliveira@gmail.com> (C) 2015
  * 
- * It contains definition of the SQLogger class and its interfaces and private members.
- * ------------------------------------------------------------------------------------
- * This code is part of SQLogger, a simple utility to log stuff into a very small SQLite database.
- * This code is licensed under GNU LGPL v2.1 license.
- * See <http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html> for more datails.
+ * It contains definition of the SQLogger class and its interfaces.
  * 
  */
 
@@ -23,41 +43,43 @@ namespace sqlogger{
       throw std::runtime_error(sqlite3_errmsg(dbHandle));
     }
   }
+  
+  SQLogger::~SQLogger()
+  {
+    sqlite3_close(dbHandle);
+  }
+
 
   //bool SQLogger::log(const std::unique_ptr<Record> rec)
   bool SQLogger::log(Record* rec)
   {
     sqlite3_stmt* stmt;
     bool logged{false};
+    int error=SQLITE_OK;
     
-    if(!created)
-    {
+    if(!created){
       std::string schema=rec->getSchema();
-      if(!schema.empty()){
-	if(sqlite3_prepare_v2(dbHandle, schema.c_str(), -1, &stmt, nullptr) == SQLITE_OK){
-	  int step = sqlite3_step(stmt);
-	  if( step == SQLITE_OK || step == SQLITE_DONE) created = true;
-	  else throw std::runtime_error(sqlite3_errmsg(dbHandle));	
-	}else throw std::runtime_error(sqlite3_errmsg(dbHandle));
+      if(!schema.empty()) {
+	error = sqlite3_prepare_v2(dbHandle, schema.c_str(), -1, &stmt, nullptr);
+	if(error == SQLITE_OK) {
+	  error = sqlite3_step(stmt);
+	  if(error == SQLITE_OK || error == SQLITE_DONE) created = true;
+	}
+	sqlite3_finalize(stmt);
       }
     }
     
     std::string query=rec->writeQuery();
-    if(!query.empty()){
-      if(sqlite3_prepare_v2(dbHandle, query.c_str(), -1, &stmt, nullptr) == SQLITE_OK){
-	  int step = sqlite3_step(stmt);
-	  if( step == SQLITE_OK || step == SQLITE_DONE) logged = true;
-	  else throw std::runtime_error(sqlite3_errmsg(dbHandle));	
-	}else throw std::runtime_error(sqlite3_errmsg(dbHandle));
+    if(!query.empty() && created) {
+      error = sqlite3_prepare_v2(dbHandle, query.c_str(), -1, &stmt, nullptr);
+      if(error == SQLITE_OK) {
+	error = sqlite3_step(stmt);
+	if(error == SQLITE_OK || error == SQLITE_DONE) logged = true;
+      }
+      sqlite3_finalize(stmt);
     }
     return logged;
   }
-
-sqlogger::SQLogger::~SQLogger()
-{
-
-}
-
 
   //Strong guarantee exception safe -- See addField member function.
   Record::Record()
@@ -66,7 +88,7 @@ sqlogger::SQLogger::~SQLogger()
   }
 
   //Strong guarantee exception safe
-  void Record::addField(const std::string& fieldName, const std::string& typeDesc, std::function<const std::string&(void)> callback)
+  void Record::addField(const std::string& fieldName, const std::string& typeDesc, std::function< const std::string(void)> callback)
   {
     if(fieldName.empty()) throw std::invalid_argument("Record::addField -> fieldName must not be empty");
     if(typeDesc.empty()) throw std::invalid_argument("Record::addField -> typeDesc must not be empty");
@@ -100,14 +122,13 @@ sqlogger::SQLogger::~SQLogger()
     }
   }
 
-  const std::string& Record::getTime()
+  const std::string Record::getTime()
   {
     std::stringstream helper;
     std::time_t local = std::time(nullptr);
     std::tm tm = *std::localtime(&local);
     helper << std::put_time(&tm, "%Y-%m-%d %H-%M-%S"); //ISO-8601 Format.
-    localTime = helper.str();
-    return localTime;
+    return helper.str();
   }
 
   const std::string Record::writeQuery()
@@ -131,5 +152,12 @@ sqlogger::SQLogger::~SQLogger()
     }
     return query;
   }
+ 
+ 
+  Record::~Record()
+  {
+
+  }
+
   
 }
